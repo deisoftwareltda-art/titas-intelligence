@@ -1,0 +1,335 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url = env("POSTGRES_PRISMA_URL")
+}
+
+enum UserRole {
+  ADMIN
+  STAFF
+}
+
+enum PlayerPosition {
+  SETTER
+  OPPOSITE
+  OUTSIDE_HITTER
+  MIDDLE_BLOCKER
+  LIBERO
+}
+
+enum Hand {
+  RIGHT
+  LEFT
+}
+
+enum MatchStatus {
+  SCHEDULED
+  LIVE
+  FINISHED
+  CANCELED
+}
+
+enum TeamSide {
+  HOME
+  OPPONENT
+}
+
+enum Skill {
+  SERVE
+  RECEPTION
+  SET
+  ATTACK
+  BLOCK
+  DEFENSE
+  ERROR
+  POINT
+}
+
+model User {
+  id String @id @default(cuid())
+  name String
+  email String @unique
+  passwordHash String
+  role UserRole @default(STAFF)
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  audits AuditLog[]
+}
+
+model Team {
+  id String @id @default(cuid())
+  name String
+  city String?
+  state String?
+  players Player[]
+  createdAt DateTime @default(now())
+}
+
+model Player {
+  id String @id @default(cuid())
+  teamId String
+  team Team @relation(fields: [teamId], references: [id])
+  name String
+  number Int
+  position PlayerPosition
+  birthDate DateTime?
+  heightCm Int?
+  attackReachCm Int?
+  blockReachCm Int?
+  dominantHand Hand @default(RIGHT)
+  photoUrl String?
+  active Boolean @default(true)
+  lineupPlayers LineupPlayer[]
+  actions Action[]
+  @@unique([teamId, number])
+  @@index([teamId, active])
+}
+
+model Opponent {
+  id String @id @default(cuid())
+  name String
+  city String?
+  state String?
+  coach String?
+  notes String?
+  players OpponentPlayer[]
+  matches Match[]
+}
+
+model OpponentPlayer {
+  id String @id @default(cuid())
+  opponentId String
+  opponent Opponent @relation(fields: [opponentId], references: [id], onDelete: Cascade)
+  name String
+  number Int
+  position PlayerPosition?
+  heightCm Int?
+  notes String?
+  actions Action[]
+  @@unique([opponentId, number])
+}
+
+model Competition {
+  id String @id @default(cuid())
+  name String
+  season String
+  matches Match[]
+}
+
+model Match {
+  id String @id @default(cuid())
+  competitionId String
+  competition Competition @relation(fields: [competitionId], references: [id])
+  opponentId String
+  opponent Opponent @relation(fields: [opponentId], references: [id])
+  phase String?
+  startsAt DateTime
+  venue String?
+  isHome Boolean @default(true)
+  status MatchStatus @default(SCHEDULED)
+  homeSets Int @default(0)
+  opponentSets Int @default(0)
+  notes String?
+  sets MatchSet[]
+  lineups Lineup[]
+  rallies Rally[]
+  substitutions Substitution[]
+  videos Video[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([startsAt, status])
+}
+
+model MatchSet {
+  id String @id @default(cuid())
+  matchId String
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  number Int
+  homeScore Int @default(0)
+  opponentScore Int @default(0)
+  finishedAt DateTime?
+  rallies Rally[]
+  @@unique([matchId, number])
+}
+
+model Lineup {
+  id String @id @default(cuid())
+  matchId String
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  setNumber Int
+  players LineupPlayer[]
+  createdAt DateTime @default(now())
+  @@unique([matchId, setNumber])
+}
+
+model LineupPlayer {
+  id String @id @default(cuid())
+  lineupId String
+  lineup Lineup @relation(fields: [lineupId], references: [id], onDelete: Cascade)
+  playerId String
+  player Player @relation(fields: [playerId], references: [id])
+  courtPosition Int?
+  serveOrder Int?
+  isLibero Boolean @default(false)
+  isStarter Boolean @default(false)
+  @@unique([lineupId, playerId])
+}
+
+model Rally {
+  id String @id @default(cuid())
+  matchId String
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  setId String
+  set MatchSet @relation(fields: [setId], references: [id], onDelete: Cascade)
+  sequence Int
+  startHomeScore Int
+  startOpponentScore Int
+  endHomeScore Int
+  endOpponentScore Int
+  servingTeam TeamSide
+  winner TeamSide
+  rotation Int
+  pointReason String?
+  durationMs Int?
+  startedAt DateTime @default(now())
+  endedAt DateTime?
+  deletedAt DateTime?
+  actions Action[]
+  snapshots RallySnapshot[]
+  videos Video[]
+  @@unique([matchId, setId, sequence])
+  @@index([matchId, setId, rotation])
+}
+
+model RallySnapshot {
+  id String @id @default(cuid())
+  rallyId String
+  rally Rally @relation(fields: [rallyId], references: [id], onDelete: Cascade)
+  playerId String
+  courtPosition Int
+  isServing Boolean @default(false)
+  @@unique([rallyId, playerId])
+}
+
+model Action {
+  id String @id @default(cuid())
+  rallyId String
+  rally Rally @relation(fields: [rallyId], references: [id], onDelete: Cascade)
+  sequence Int
+  skill Skill
+  team TeamSide
+  playerId String?
+  player Player? @relation(fields: [playerId], references: [id])
+  opponentPlayerId String?
+  opponentPlayer OpponentPlayer? @relation(fields: [opponentPlayerId], references: [id])
+  result String
+  zoneFrom String?
+  zoneTo String?
+  subtype String?
+  metadata Json?
+  occurredAt DateTime @default(now())
+  deletedAt DateTime?
+  serve Serve?
+  reception Reception?
+  attack Attack?
+  block Block?
+  defense Defense?
+  @@unique([rallyId, sequence])
+  @@index([playerId, skill, result])
+}
+
+model Serve {
+  id String @id @default(cuid())
+  actionId String @unique
+  action Action @relation(fields: [actionId], references: [id], onDelete: Cascade)
+  serveType String
+  destination String
+}
+
+model Reception {
+  id String @id @default(cuid())
+  actionId String @unique
+  action Action @relation(fields: [actionId], references: [id], onDelete: Cascade)
+  courtZone String?
+  quality String
+}
+
+model Attack {
+  id String @id @default(cuid())
+  actionId String @unique
+  action Action @relation(fields: [actionId], references: [id], onDelete: Cascade)
+  origin String
+  attackType String
+  destination String?
+}
+
+model Block {
+  id String @id @default(cuid())
+  actionId String @unique
+  action Action @relation(fields: [actionId], references: [id], onDelete: Cascade)
+  blockType String
+}
+
+model Defense {
+  id String @id @default(cuid())
+  actionId String @unique
+  action Action @relation(fields: [actionId], references: [id], onDelete: Cascade)
+  quality String
+}
+
+model Substitution {
+  id String @id @default(cuid())
+  matchId String
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  setNumber Int
+  score String
+  playerInId String
+  playerOutId String
+  createdAt DateTime @default(now())
+}
+
+model Video {
+  id String @id @default(cuid())
+  matchId String
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  rallyId String?
+  rally Rally? @relation(fields: [rallyId], references: [id])
+  videoUrl String
+  startTimestampMs Int?
+  endTimestampMs Int?
+}
+
+model AiReport {
+  id String @id @default(cuid())
+  title String
+  question String
+  answer String
+  evidence Json
+  createdAt DateTime @default(now())
+}
+
+model AuditLog {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields: [userId], references: [id])
+  entity String
+  entityId String
+  operation String
+  before Json?
+  after Json?
+  createdAt DateTime @default(now())
+  @@index([entity, entityId, createdAt])
+}
+
+// Estado compartilhado do MVP. Os ralis continuam sendo a fonte dos dados
+// dentro do JSON; a normalização completa seguirá a evolução dos módulos.
+model WorkspaceState {
+  id        String   @id @default("main")
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

@@ -1,0 +1,16 @@
+node_modules
+.next
+.next-dev
+.next-prod
+.next-backup-*
+.env
+*.log
+.DS_Store
+coverage
+.tools
+node-portable.zip
+
+.vercel
+.env.local
+.env.*.local
+!.env.example
