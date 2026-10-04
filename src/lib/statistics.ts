@@ -2,6 +2,12 @@ import type { AppState, Rally } from "./types";
 
 const pct = (value: number, total: number) => total ? Math.round((value / total) * 1000) / 10 : 0;
 
+const errorResults = new Set(["Erro", "Erro direto"]);
+
+function isError(result: string) {
+  return errorResults.has(result) || result.toLowerCase().startsWith("erro ");
+}
+
 export function matchScore(rallies: Rally[], matchId: string, set: number) {
   const list = rallies.filter(r => r.matchId === matchId && r.set === set);
   return { titas: list.filter(r => r.winner === "TITAS").length, opponent: list.filter(r => r.winner === "ADVERSARIO").length };
@@ -79,4 +85,37 @@ export function matchStatistics(state: AppState, matchId: string) {
     serveAttempts: serves.length,
     rotations: rotationStats(filtered),
   };
+}
+export function playerStatistics(state: AppState, matchId: string) {
+  const match = state.matches.find(m => m.id === matchId);
+  const actions = state.rallies.filter(r => r.matchId === matchId).flatMap(r => r.actions).filter(a => a.team === "TITAS" && a.playerId);
+  const fundamentals = [
+    { skill: "RECEPÇÃO" as const, label: "Passe", successResults: ["Perfeita", "Positiva"], errorResults: ["Erro direto"] },
+    { skill: "SAQUE" as const, label: "Saque", successResults: ["Ace", "Positivo"], errorResults: ["Erro"] },
+    { skill: "ATAQUE" as const, label: "Ataque", successResults: ["Ponto"], errorResults: ["Erro", "Bloqueado"] },
+    { skill: "BLOQUEIO" as const, label: "Bloqueio", successResults: ["Ponto", "Positivo"], errorResults: ["Erro", "Negativo"] },
+  ];
+
+  return (match?.lineup ?? []).map(playerId => {
+    const player = state.players.find(p => p.id === playerId);
+    if (!player) return null;
+    const playerActions = actions.filter(a => a.playerId === playerId);
+    const byFundamental = fundamentals.map(config => {
+      const skillActions = playerActions.filter(a => a.skill === config.skill);
+      const successes = skillActions.filter(a => config.successResults.includes(a.result)).length;
+      const errors = skillActions.filter(a => config.errorResults.includes(a.result)).length;
+      const neutral = skillActions.length - successes - errors;
+      const results = Array.from(new Set(skillActions.map(a => a.result))).map(result => ({
+        result,
+        count: skillActions.filter(a => a.result === result).length,
+        status: config.successResults.includes(result) ? "success" as const : config.errorResults.includes(result) ? "error" as const : "neutral" as const,
+      }));
+      return { skill: config.skill, label: config.label, attempts: skillActions.length, successes, errors, neutral, efficiency: pct(successes, skillActions.length), results };
+    });
+    const attempts = byFundamental.reduce((total, item) => total + item.attempts, 0);
+    const successes = byFundamental.reduce((total, item) => total + item.successes, 0);
+    const errors = byFundamental.reduce((total, item) => total + item.errors, 0);
+    const neutral = byFundamental.reduce((total, item) => total + item.neutral, 0);
+    return { player, actions: attempts, successes, errors, neutral, efficiency: pct(successes, attempts), fundamentals: byFundamental };
+  }).filter((item): item is NonNullable<typeof item> => item !== null).sort((a, b) => b.actions - a.actions || a.player.number - b.player.number);
 }

@@ -14,3 +14,7 @@ node-portable.zip
 .env.local
 .env.*.local
 !.env.example
+backups/
+.playwright-mcp/
+*.tsbuildinfo
+supabase/.temp/
