@@ -4,7 +4,7 @@ import { Shell } from "@/components/shell";
 import { StatCard } from "@/components/ui";
 import { PlayerScout } from "@/components/player-scout";
 import { useApp } from "@/context/app-context";
-import { matchStatistics } from "@/lib/statistics";
+import { matchStatistics, playerStatistics } from "@/lib/statistics";
 import { ArrowLeft, Download, Radio } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -14,6 +14,7 @@ export default function MatchStatisticsPage() {
   const match = state.matches.find(m => m.id === id);
   if (!match) return <Shell title="Estatísticas da partida"><div className="panel p-10 text-center">Partida não encontrada.</div></Shell>;
   const opponent = state.opponents.find(o => o.id === match.opponentId); const s = matchStatistics(state, match.id);
+  const playerStats = playerStatistics(state, match.id);
   const setter = state.players.find(p => match.lineup.includes(p.id) && p.position === "Levantador");
   const bestEfficiency = Math.max(...s.rotations.filter(r => r.rallies > 0).map(r => r.efficiency), -1);
   const generatePdf = async () => {
@@ -36,6 +37,44 @@ export default function MatchStatisticsPage() {
     pdf.setFillColor(20, 28, 37); pdf.rect(15, 122, 176, 9, "F"); pdf.setTextColor(255); pdf.setFontSize(8); headers.forEach((h, i) => { pdf.text(h, x + 1, 128); x += widths[i]; });
     pdf.setTextColor(20); s.rotations.forEach((r, row) => { let cx = 15; const y = 138 + row * 9; const values = [`P${r.rotation}`, r.rallies, r.won, r.lost, `${r.efficiency}%`, `${r.sideOut}%`, `${r.breakPoint}%`, `${r.attackEfficiency}%`, r.errors]; values.forEach((v, i) => { pdf.text(String(v), cx + 1, y); cx += widths[i]; }); pdf.setDrawColor(220); pdf.line(15, y + 2, 191, y + 2); });
     pdf.setTextColor(100); pdf.setFontSize(8); pdf.text("Estatísticas calculadas exclusivamente a partir dos ralis registrados no Titãs Intelligence.", 15, 202);
+    playerStats.forEach(({ player, actions, successes, errors, fundamentals }) => {
+      pdf.addPage();
+      pdf.setTextColor(20); pdf.setFont("helvetica", "bold"); pdf.setFontSize(16);
+      pdf.text(`#${player.number} ${player.name}`, 15, 20);
+      pdf.setFont("helvetica", "normal"); pdf.setFontSize(10);
+      pdf.text(`${actions} ações registradas  |  ${successes} acertos  |  ${errors} erros`, 15, 28);
+      pdf.setFont("helvetica", "bold"); pdf.setFontSize(12);
+      pdf.text("Acertos e erros por fundamento", 15, 42);
+
+      let y = 52;
+      fundamentals.filter(f => f.attempts > 0).forEach(fundamental => {
+        if (y > 260) { pdf.addPage(); y = 20; }
+        pdf.setFont("helvetica", "bold"); pdf.setFontSize(11);
+        pdf.text(fundamental.label, 15, y);
+        pdf.setFont("helvetica", "normal"); pdf.setFontSize(9);
+        pdf.text(`${fundamental.attempts} ações  |  ${fundamental.successes} acertos  |  ${fundamental.errors} erros`, 15, y + 6);
+        const successfulResults = fundamental.results.filter(r => r.status === "success").map(r => `${r.result} (${r.count})`);
+        const errorResults = fundamental.results.filter(r => r.status === "error").map(r => `${r.result} (${r.count})`);
+        const neutralResults = fundamental.results.filter(r => r.status === "neutral").map(r => `${r.result} (${r.count})`);
+        const lines = [
+          `Acertos: ${successfulResults.join(", ") || "nenhum"}`,
+          `Erros: ${errorResults.join(", ") || "nenhum"}`,
+          ...(neutralResults.length ? [`Outros resultados: ${neutralResults.join(", ")}`] : []),
+        ];
+        y += 12;
+        lines.forEach(line => {
+          const wrapped = pdf.splitTextToSize(line, 175) as string[];
+          if (y + wrapped.length * 5 > 280) { pdf.addPage(); y = 20; }
+          pdf.text(wrapped, 18, y);
+          y += wrapped.length * 5;
+        });
+        y += 7;
+      });
+      if (!fundamentals.some(f => f.attempts > 0)) {
+        pdf.setFont("helvetica", "normal"); pdf.setFontSize(10);
+        pdf.text("Nenhuma ação individual foi registrada para este atleta.", 15, y);
+      }
+    });
     pdf.save(`titas-${opponentName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${match.date}.pdf`);
   };
   return <Shell title="Estatísticas da partida" eyebrow={`${match.competition} · ${match.phase}`}>
